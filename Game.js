@@ -33,11 +33,56 @@ const WAIT_FOR_ISLAND_COUNTER = 5;
 const TURN_END = 6;
 
 class Game {
-    constructor(gameID) {
+    constructor(gameID, sockets) {
         this.gameID = gameID;
         this.players = [createPlayer(), createPlayer()];
+        this.sockets = sockets;
         this.curPlayer = 0;
         this.state = TURN_START;
+    }
+
+    setupSockets() {
+        [0,1].foreach((i) => {
+            this.sockets[i].on("play card", (args) => this.playCard(i, args));
+            this.sockets[i].on("end turn", () => this.endTurn(i));
+            this.sockets[i].emit("game started", this.gameID);
+            this.sockets[i].emit("board state", this.getBoardState(i));
+        });
+    }
+
+    getBoardState(player) {
+        let myFullInfo = this.players[player];
+        let otherFullInfo = this.players[1-player];
+        let mySide = {
+            "deck": myFullInfo.deck.length,
+            "discard": myFullInfo.discard,
+            "hand": myFullInfo.hand,
+            "board": myFullInfo.board
+        };
+        let otherSide = {
+            "deck": otherFullInfo.deck.length,
+            "discard": otherFullInfo.discard,
+            "hand": { "visible" : otherFullInfo.hand.visible.length,
+                      "hidden" : otherFullInfo.hand.hidden.length },
+            "board": otherFullInfo.board
+        }
+
+        return {"myTurn": player == this.curPlayer, "state": [mySide, otherSide]};
+    }
+
+    playCard(player, args) {
+        let hand = this.players[player].hand;
+        if (!args.index || !args.type || args.index >= hand.length || hand[args.index] != args.type) {
+            this.sockets[player].emit("play card", false);
+            return;
+        }
+
+        // TODO
+    }
+
+    endTurn(player) {
+        this.curPlayer = 1-this.curPlayer;
+        [0,1].foreach((i) => this.sockets[i].emit("new turn", this.getBoardState(player)));
     }
 }
 
