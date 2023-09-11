@@ -3,11 +3,30 @@ import http from 'http';
 import { Server as SocketIO } from 'socket.io';
 
 import Game from './Game.js';
+import cors from 'cors'
 
 const app = express();
+
+const corsOptions = {
+  origin: '*',
+  methods: 'GET,POST,PUT,DELETE',
+  allowedHeaders: 'Content-Type,Authorization',
+  credentials: true,
+  exposedHeaders: 'Custom-Header',
+};
+
+
+app.use(cors(corsOptions));
+
 const server = http.createServer(app);
-const io = new SocketIO(server);
-const port = process.env.PORT || 3000;
+const io = new SocketIO(server,{
+  cors:{
+    origin: "*",
+    methods: ["Get", "POST"],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  }
+});
+const port = process.env.PORT || 3002;
 
 let games = {}
 
