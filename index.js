@@ -44,3 +44,7 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
+
+server.listen(3001, () => {
+  console.log('server running at http://localhost:3001');
+});
