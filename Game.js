@@ -42,9 +42,11 @@ class Game {
     }
 
     setupSockets() {
-        [0,1].foreach((i) => {
+        console.log("Setup sockets");
+        [0,1].forEach((i) => {
             this.sockets[i].on("play card", (args) => this.playCard(i, args));
             this.sockets[i].on("end turn", () => this.endTurn(i));
+            console.log("Sending board state to player "+i);
             this.sockets[i].emit("game started", this.gameID);
             this.sockets[i].emit("board state", this.getBoardState(i));
         });
@@ -81,8 +83,9 @@ class Game {
     }
 
     endTurn(player) {
+        if (player !== this.curPlayer) return;
         this.curPlayer = 1-this.curPlayer;
-        [0,1].foreach((i) => this.sockets[i].emit("new turn", this.getBoardState(player)));
+        [0,1].forEach((i) => this.sockets[i].emit("new turn", this.getBoardState(i)));
     }
 }
 
