@@ -30,14 +30,15 @@ const FOREST_SELECT = 2;
 const ISLAND_SELECT = 3;
 const SWAMP_SELECT = 4;
 const WAIT_FOR_ISLAND_COUNTER = 5;
-const TURN_END = 6;
+const GAME_OVER = 6;
 
 class Game {
-    constructor(gameID, sockets) {
+    constructor(gameID, sockets, destroyMe) {
         this.gameID = gameID;
+        this.destroyMe = destroyMe;
         this.players = [createPlayer(), createPlayer()];
         this.sockets = sockets;
-        this.curPlayer = 0;
+        this.curPlayer = Math.floor(Math.random()*2);
         this.state = TURN_START;
     }
 
@@ -85,38 +86,68 @@ class Game {
         [0,1].forEach((i) => this.sockets[i].emit("board state", this.getBoardState(i)));
     }
 
+    drawCard(player) {
+        let p = this.players[player];
+        if (p.deck.length === 0) {
+            p.deck = shuffle(p.discard);
+            p.discard = [];
+        }
+        return p.deck.pop();
+    }
+
+    checkWin(player) {
+        let p = this.players[player];
+        if (cardTypes.every((x) => (p.board[x]>0)) ||
+            cardTypes.some((x) => (p.board[x] == 5))) {
+            return true;
+        }
+        return false;
+    }
+
     playCard(player, args) {
         console.log("Player "+player+" playing card: "+JSON.stringify(args,null,4));
         let p = this.players[player];
         let q = this.players[1-player];
         let hand = (args.visible ? p.hand.visible : p.hand.hidden);
-        if (this.curPlayer !== player || !("index" in args) || !("type" in args) ||
-            !("visible" in args) || (typeof args.visible) !== "boolean" ||
-            (typeof args.index) !== "number" || args.index < 0 ||
-            args.index >= hand.length || !(cardTypes.includes(args.type)) ||
-            hand[args.index] !== args.type) {
+        if (this.curPlayer !== player || this.state !== TURN_START ||
+            !("index" in args) || !("visible" in args) ||
+            (typeof args.visible) !== "boolean" || (typeof args.index) !== "number" ||
+            args.index < 0 || args.index >= hand.length) {
             console.log("Invalid");
             return;
         }
 
+        let type = hand[args.index];
         hand.splice(args.index, 1);
         // TODO: island negation
-        p.board[args.type]++;
-        switch (args.type) {
+        p.board[type]++;
+        switch (type) {
             case PLAINS:
-                p.hand.hidden.push(p.deck.pop());
+                p.hand.hidden.push(this.drawCard(player));
                 this.endTurn(player);
-                break;
+                return;
             case MOUNTAIN:
+                if (cardTypes.every((x) => (q.board[x] === 0))) {
+                    this.endTurn(player);
+                    return;
+                }
                 this.state = MOUNTAIN_SELECT;
                 break;
             case FOREST:
+                if (p.discard.length === 0) {
+                    this.endTurn(player);
+                    return;
+                }
                 this.state = FOREST_SELECT;
                 break;
             case ISLAND:
                 this.state = ISLAND_SELECT;
                 break;
             case SWAMP:
+                if ((q.hand.hidden.length+q.hand.visible.length) === 0) {
+                    this.endTurn(player);
+                    return;
+                }
                 this.state = SWAMP_SELECT;
                 q.hand.visible = q.hand.visible.concat(q.hand.hidden);
                 q.hand.hidden = [];
@@ -140,14 +171,14 @@ class Game {
 
     forestSelect(player, args) {
         let [p, q] = [this.players[player], this.players[1-player]];
-        if (this.curPlayer !== player || this.state != FOREST_SELECT ||
-            !cardTypes.includes(args.type) || !p.discard.includes(args.type)) {
+        if (this.curPlayer !== player || this.state !== FOREST_SELECT ||
+            (typeof args.index) !== "number" || args.index < 0 ||
+            args.index >= p.discard.length) {
             console.log("Invalid forest");
             return;
         }
-        let i = p.discard.findIndex(args.type);
-        p.discard.splice(i, 1);
-        p.hand.visible.push(args.type);
+        p.hand.visible.push(p.discard[args.index]);
+        p.discard.splice(args.index, 1);
         this.endTurn(player);
     }
 
@@ -160,8 +191,14 @@ class Game {
             console.log("Invalid island");
             return;
         }
-        let newFour = args.map((x) => p.deck[p.deck.length-1-x]);
-        newFour.reverse();
+        let newFour = args.map((x) => p.deck[p.deck.length-islandLength+x]);
+        let all = Array.from(Array(islandLength).keys());
+        all.forEach((i) => {
+            if (!(args.includes(i))) {
+                p.discard.push(p.deck[p.deck.length-1-i]);
+            }
+        });
+
         p.deck.splice(p.deck.length-islandLength, islandLength, ...newFour);
         this.endTurn(player);
     }
@@ -169,21 +206,26 @@ class Game {
     swampSelect(player, args) {
         let [p, q] = [this.players[player], this.players[1-player]];
         if (this.curPlayer !== player || this.state != SWAMP_SELECT ||
-            args.index < 0 || args.index >= q.hand.visible.length ||
-            !cardTypes.includes(args.type) || q.hand.visible[args.index] !== args.type) {
+            (typeof args.index) !== "number" || args.index < 0 ||
+            args.index >= q.hand.visible.length) {
             console.log("Invalid swamp");
             return;
         }
+        q.discard.push(q.hand.visible[args.index]);
         q.hand.visible.splice(args.index, 1);
-        q.discard.push(args.type);
         this.endTurn(player);
     }
 
     endTurn(player) {
         if (player !== this.curPlayer) return;
+        if (this.checkWin(player)) this.state = GAME_OVER;
+        else this.state = TURN_START;
         this.curPlayer = 1-this.curPlayer;
-        this.state = TURN_START;
+        let p = this.players[this.curPlayer];
+        p.hand.hidden.push(this.drawCard(this.curPlayer));
         this.updatePlayers();
+        if (this.state === GAME_OVER)
+            this.destroyMe();
     }
 }
 

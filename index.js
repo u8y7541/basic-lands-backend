@@ -42,7 +42,13 @@ io.on("connection", (socket) => {
             }
             console.log("Starting new game "+id);
             games[id].sockets.push(socket);
-            games[id].game = new Game(id,games[id].sockets);
+            let destroyMe = () => {
+                // TODO: Remove game from games object, record history, etc.
+                console.log("Destroying game "+id);
+                games[id].ended = true;
+                games[id].sockets.forEach((sock) => sock.disconnect(true));
+            }
+            games[id].game = new Game(id,games[id].sockets,destroyMe);
             games[id].game.setupSockets();
             games[id].started = true;
             return;
@@ -50,6 +56,7 @@ io.on("connection", (socket) => {
         console.log("Creating new game "+id);
         games[id] = {
             "started": false,
+            "ended": false,
             "sockets": [socket]
         };
         socket.emit("waiting for other player");
