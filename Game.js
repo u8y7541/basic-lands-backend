@@ -38,13 +38,13 @@ class Game {
         this.destroyMe = destroyMe;
         this.players = [createPlayer(), createPlayer()];
         this.sockets = sockets;
-        this.curPlayer = Math.floor(Math.random()*2);
+        this.curPlayer = Math.floor(Math.random() * 2);
         this.state = TURN_START;
     }
 
     setupSockets() {
         console.log("Setup sockets");
-        [0,1].forEach((i) => {
+        [0, 1].forEach((i) => {
             let sock = this.sockets[i];
             sock.on("play card", (args) => this.playCard(i, args));
             sock.on("mountain select", (args) => this.mountainSelect(i, args));
@@ -60,7 +60,7 @@ class Game {
 
     getBoardState(player) {
         let myFullInfo = this.players[player];
-        let otherFullInfo = this.players[1-player];
+        let otherFullInfo = this.players[1 - player];
         let mySide = {
             "deck": myFullInfo.deck.length,
             "discard": myFullInfo.discard,
@@ -68,22 +68,24 @@ class Game {
             "board": myFullInfo.board
         };
         if (this.state === ISLAND_SELECT && player === this.curPlayer) {
-            let islandLength = Math.min(myFullInfo.deck.length,4);
-            mySide["top4"] = myFullInfo.deck.slice(myFullInfo.deck.length-islandLength);
+            let islandLength = Math.min(myFullInfo.deck.length, 4);
+            mySide["top4"] = myFullInfo.deck.slice(myFullInfo.deck.length - islandLength);
         }
         let otherSide = {
             "deck": otherFullInfo.deck.length,
             "discard": otherFullInfo.discard,
-            "hand": { "visible" : otherFullInfo.hand.visible,
-                      "hidden" : otherFullInfo.hand.hidden.length },
+            "hand": {
+                "visible": otherFullInfo.hand.visible,
+                "hidden": otherFullInfo.hand.hidden.length
+            },
             "board": otherFullInfo.board
         }
 
-        return {"myTurn": player === this.curPlayer, "state": this.state, "cards": [mySide, otherSide]};
+        return { "myTurn": player === this.curPlayer, "state": this.state, "cards": [mySide, otherSide] };
     }
 
     updatePlayers() {
-        [0,1].forEach((i) => this.sockets[i].emit("board state", this.getBoardState(i)));
+        [0, 1].forEach((i) => this.sockets[i].emit("board state", this.getBoardState(i)));
     }
 
     drawCard(player) {
@@ -97,7 +99,7 @@ class Game {
 
     checkWin(player) {
         let p = this.players[player];
-        if (cardTypes.every((x) => (p.board[x]>0)) ||
+        if (cardTypes.every((x) => (p.board[x] > 0)) ||
             cardTypes.some((x) => (p.board[x] == 5))) {
             return true;
         }
@@ -105,9 +107,9 @@ class Game {
     }
 
     playCard(player, args) {
-        console.log("Player "+player+" playing card: "+JSON.stringify(args,null,4));
+        console.log("Player " + player + " playing card: " + JSON.stringify(args, null, 4));
         let p = this.players[player];
-        let q = this.players[1-player];
+        let q = this.players[1 - player];
         let hand = (args.visible ? p.hand.visible : p.hand.hidden);
         if (this.curPlayer !== player || this.state !== TURN_START ||
             !("index" in args) || !("visible" in args) ||
@@ -144,7 +146,7 @@ class Game {
                 this.state = ISLAND_SELECT;
                 break;
             case SWAMP:
-                if ((q.hand.hidden.length+q.hand.visible.length) === 0) {
+                if ((q.hand.hidden.length + q.hand.visible.length) === 0) {
                     this.endTurn(player);
                     return;
                 }
@@ -158,7 +160,7 @@ class Game {
 
     // TODO: better type checking for all of these
     mountainSelect(player, args) {
-        let [p, q] = [this.players[player], this.players[1-player]];
+        let [p, q] = [this.players[player], this.players[1 - player]];
         if (this.curPlayer !== player || this.state != MOUNTAIN_SELECT ||
             !(cardTypes.includes(args.type)) || q.board[args.type] < 1) {
             console.log("Invalid mountain");
@@ -170,7 +172,7 @@ class Game {
     }
 
     forestSelect(player, args) {
-        let [p, q] = [this.players[player], this.players[1-player]];
+        let [p, q] = [this.players[player], this.players[1 - player]];
         if (this.curPlayer !== player || this.state !== FOREST_SELECT ||
             (typeof args.index) !== "number" || args.index < 0 ||
             args.index >= p.discard.length) {
@@ -183,28 +185,28 @@ class Game {
     }
 
     islandSelect(player, args) {
-        let [p, q] = [this.players[player], this.players[1-player]];
-        let islandLength = Math.min(p.deck.length,4);
+        let [p, q] = [this.players[player], this.players[1 - player]];
+        let islandLength = Math.min(p.deck.length, 4);
         if (this.curPlayer !== player || this.state != ISLAND_SELECT ||
-            args.some((x) => (x<0 || x>=islandLength)) ||
+            args.some((x) => (x < 0 || x >= islandLength)) ||
             (new Set(args)).size != args.length) {
             console.log("Invalid island");
             return;
         }
-        let newFour = args.map((x) => p.deck[p.deck.length-islandLength+x]);
+        let newFour = args.map((x) => p.deck[p.deck.length - islandLength + x]);
         let all = Array.from(Array(islandLength).keys());
         all.forEach((i) => {
             if (!(args.includes(i))) {
-                p.discard.push(p.deck[p.deck.length-1-i]);
+                p.discard.push(p.deck[p.deck.length - 1 - i]);
             }
         });
 
-        p.deck.splice(p.deck.length-islandLength, islandLength, ...newFour);
+        p.deck.splice(p.deck.length - islandLength, islandLength, ...newFour);
         this.endTurn(player);
     }
 
     swampSelect(player, args) {
-        let [p, q] = [this.players[player], this.players[1-player]];
+        let [p, q] = [this.players[player], this.players[1 - player]];
         if (this.curPlayer !== player || this.state != SWAMP_SELECT ||
             (typeof args.index) !== "number" || args.index < 0 ||
             args.index >= q.hand.visible.length) {
@@ -220,7 +222,7 @@ class Game {
         if (player !== this.curPlayer) return;
         if (this.checkWin(player)) this.state = GAME_OVER;
         else this.state = TURN_START;
-        this.curPlayer = 1-this.curPlayer;
+        this.curPlayer = 1 - this.curPlayer;
         let p = this.players[this.curPlayer];
         p.hand.hidden.push(this.drawCard(this.curPlayer));
         this.updatePlayers();
