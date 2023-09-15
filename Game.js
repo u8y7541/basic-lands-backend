@@ -1,4 +1,4 @@
-import { PLAINS, MOUNTAIN, FOREST, ISLAND, SWAMP, cardTypes } from './Cards.js';
+import { PLAINS, MOUNTAIN, FOREST, ISLAND, SWAMP, cardTypes, cardNames } from './Cards.js';
 
 // Array shuffle algorithm
 const shuffle = (array) => {
@@ -10,12 +10,13 @@ const shuffle = (array) => {
 };
 
 // Create deck with 25 cards, shuffle, put top 3 into hand, return Player object
-const createPlayer = () => {
+const createPlayer = (name) => {
     let deck = shuffle(cardTypes.flatMap((card) => new Array(5).fill(card)));
     let discard = new Array();
     let hand = { visible: [], hidden: [deck.pop(), deck.pop(), deck.pop()] };
     let board = Object.fromEntries(cardTypes.map((card) => [card, 0]));
     return {
+        "name": name,
         "deck": deck,
         "discard": discard,
         "hand": hand,
@@ -33,10 +34,10 @@ const WAIT_FOR_ISLAND_COUNTER = 5;
 const GAME_OVER = 6;
 
 class Game {
-    constructor(gameID, sockets, destroyMe) {
+    constructor(gameID, names, sockets, destroyMe) {
         this.gameID = gameID;
         this.destroyMe = destroyMe;
-        this.players = [createPlayer(), createPlayer()];
+        this.players = [createPlayer(names[0]), createPlayer(names[1])];
         this.sockets = sockets;
         this.curPlayer = Math.floor(Math.random() * 2);
         this.state = TURN_START;
@@ -55,6 +56,13 @@ class Game {
 
             sock.emit("game started", this.gameID);
             sock.emit("board state", this.getBoardState(i));
+        });
+    }
+
+    sendLogMessage(msg, player) {
+        [0, 1].forEach((i) => {
+            let sock = this.sockets[i];
+            sock.emit("log", {"message": msg, "talkingAboutYou": (player === i)});
         });
     }
 
@@ -129,10 +137,12 @@ class Game {
         p.board[type]++;
         switch (type) {
             case PLAINS:
+                this.sendLogMessage(p.name + " played Plains", player);
                 p.hand.hidden.push(this.drawCard(player));
                 this.endTurn(player);
                 return;
             case MOUNTAIN:
+                this.sendLogMessage(p.name + " played Mountain", player);
                 if (cardTypes.every((x) => (q.board[x] === 0))) {
                     this.endTurn(player);
                     return;
@@ -140,6 +150,7 @@ class Game {
                 this.state = MOUNTAIN_SELECT;
                 break;
             case FOREST:
+                this.sendLogMessage(p.name + " played Forest", player);
                 if (p.discard.length === 0) {
                     this.endTurn(player);
                     return;
@@ -147,9 +158,11 @@ class Game {
                 this.state = FOREST_SELECT;
                 break;
             case ISLAND:
+                this.sendLogMessage(p.name + " played Island", player);
                 this.state = ISLAND_SELECT;
                 break;
             case SWAMP:
+                this.sendLogMessage(p.name + " played Swamp", player);
                 if ((q.hand.hidden.length + q.hand.visible.length) === 0) {
                     this.endTurn(player);
                     return;
@@ -170,6 +183,7 @@ class Game {
             console.log("Invalid mountain");
             return;
         }
+        this.sendLogMessage(p.name + " destroyed " + q.name + "'s " + cardNames(args.type), player);
         q.board[args.type]--;
         q.discard.push(args.type);
         this.endTurn(player);
@@ -183,6 +197,7 @@ class Game {
             console.log("Invalid forest");
             return;
         }
+        this.sendLogMessage(p.name + " revived " + cardNames(p.discard[args.index]), player);
         p.hand.visible.push(p.discard[args.index]);
         p.discard.splice(args.index, 1);
         this.endTurn(player);
@@ -198,6 +213,7 @@ class Game {
             return;
         }
 
+        this.sendLogMessage(p.name + " shuffled their top 4 cards", player);
         let newFour = args.map((x) => p.deck[p.deck.length - 1 - x]);
         newFour.reverse();
         let all = Array.from(Array(islandLength).keys());
@@ -219,6 +235,8 @@ class Game {
             console.log("Invalid swamp");
             return;
         }
+
+        this.sendLogMessage(p.name + " destroyed " + q.name + "'s " + cardNames(q.hand.visible[args.index]), player);
         q.discard.push(q.hand.visible[args.index]);
         q.hand.visible.splice(args.index, 1);
         this.endTurn(player);
@@ -226,6 +244,7 @@ class Game {
 
     endTurn(player) {
         if (player !== this.curPlayer) return;
+        this.sendLogMessage(this.players[player].name + " ended their turn", player);
         if (this.checkWin(player)) this.state = GAME_OVER;
         else this.state = TURN_START;
         this.curPlayer = 1 - this.curPlayer;

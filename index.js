@@ -33,7 +33,9 @@ let games = {}
 io.on("connection", (socket) => {
     console.log("New connection");
     let gameID = -1;
-    socket.on("join game", (id) => {
+    socket.on("join game", (args) => {
+        let id = args.id;
+        let name = args.name;
         console.log("New join to "+id);
         if (id in games) {
             if (games[id].started) {
@@ -41,6 +43,7 @@ io.on("connection", (socket) => {
                 return;
             }
             console.log("Starting new game "+id);
+            games[id].names.push(name);
             games[id].sockets.push(socket);
             let destroyMe = () => {
                 // TODO: Remove game from games object, record history, etc.
@@ -48,7 +51,7 @@ io.on("connection", (socket) => {
                 games[id].ended = true;
                 games[id].sockets.forEach((sock) => sock.disconnect(true));
             }
-            games[id].game = new Game(id,games[id].sockets,destroyMe);
+            games[id].game = new Game(id,games[id].names,games[id].sockets,destroyMe);
             games[id].game.setupSockets();
             games[id].started = true;
             return;
@@ -57,7 +60,8 @@ io.on("connection", (socket) => {
         games[id] = {
             "started": false,
             "ended": false,
-            "sockets": [socket]
+            "names": [name],
+            "sockets": [socket],
         };
         socket.emit("waiting for other player");
     })
