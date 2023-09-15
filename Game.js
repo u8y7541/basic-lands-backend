@@ -69,7 +69,11 @@ class Game {
         };
         if (this.state === ISLAND_SELECT && player === this.curPlayer) {
             let islandLength = Math.min(myFullInfo.deck.length, 4);
-            mySide["top4"] = myFullInfo.deck.slice(myFullInfo.deck.length - islandLength);
+            let top4 = myFullInfo.deck.slice(myFullInfo.deck.length - islandLength);
+            mySide["top4"] = []
+            for (let i = top4.length - 1; i >= 0; i--) {
+                mySide["top4"].push(top4[i])
+            }
         }
         let otherSide = {
             "deck": otherFullInfo.deck.length,
@@ -193,7 +197,7 @@ class Game {
             console.log("Invalid island");
             return;
         }
-        args.reverse();
+        args = args.map(arg => (args.length() - 1 - arg))
         let newFour = args.map((x) => p.deck[p.deck.length - islandLength + x]);
         let all = Array.from(Array(islandLength).keys());
         all.forEach((i) => {
