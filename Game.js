@@ -193,6 +193,7 @@ class Game {
             console.log("Invalid island");
             return;
         }
+        args.reverse();
         let newFour = args.map((x) => p.deck[p.deck.length - islandLength + x]);
         let all = Array.from(Array(islandLength).keys());
         all.forEach((i) => {
