@@ -129,8 +129,7 @@ class Game {
 
     playCard(player, args) {
         console.log("Player " + player + " playing card: " + JSON.stringify(args, null, 4));
-        let p = this.players[player];
-        let q = this.players[1 - player];
+        let [p, q] = [this.players[player], this.players[1-player]];
         let hand = (args.visible ? p.hand.visible : p.hand.hidden);
         if (this.curPlayer !== player || this.state !== TURN_START ||
             !("index" in args) || !("visible" in args) ||
@@ -142,14 +141,14 @@ class Game {
 
         let type = hand[args.index];
         hand.splice(args.index, 1);
-        // TODO: island negation
         p.board[type]++;
+        this.sendLogMessage(p.name + " played " + cardNames(type), player);
         switch (type) {
             case PLAINS:
-                this.sendLogMessage(p.name + " played Plains", player);
                 this.askCounter(player, PLAINS,
                     () => {
-                        p.board[type]--;
+                        p.board[PLAINS]--;
+                        p.discard.push(PLAINS);
                         this.endTurn(player);
                     },
                     () => {
@@ -158,11 +157,11 @@ class Game {
                     })
                 return;
             case MOUNTAIN:
-                this.sendLogMessage(p.name + " played Mountain", player);
                 if (cardTypes.every((x) => (q.board[x] === 0))) {
                     this.askCounter(player, MOUNTAIN,
                         () => {
-                            p.board[type]--;
+                            p.board[MOUNTAIN]--;
+                            p.discard.push(MOUNTAIN);
                             this.endTurn(player);
                         },
                         () => {
@@ -173,11 +172,11 @@ class Game {
                 this.state = MOUNTAIN_SELECT;
                 break;
             case FOREST:
-                this.sendLogMessage(p.name + " played Forest", player);
                 if (p.discard.length === 0) {
                     this.askCounter(player, FOREST,
                         () => {
-                            p.board[type]--;
+                            p.board[FOREST]--;
+                            p.discard.push(FOREST);
                             this.endTurn(player)
                         },
                         () => {
@@ -188,10 +187,10 @@ class Game {
                 this.state = FOREST_SELECT;
                 break;
             case ISLAND:
-                this.sendLogMessage(p.name + " played Island", player);
                 this.askCounter(player, ISLAND,
                     () => {
-                        p.board[type]--;
+                        p.board[ISLAND]--;
+                        p.discard.push(ISLAND);
                         this.endTurn(player)
                     }
                     , () => {
@@ -201,11 +200,11 @@ class Game {
                 )
                 break;
             case SWAMP:
-                this.sendLogMessage(p.name + " played Swamp", player);
                 if ((q.hand.hidden.length + q.hand.visible.length) === 0) {
                     this.askCounter(player, SWAMP,
                         () => {
-                            p.board[type]--;
+                            p.board[SWAMP]--;
+                            p.discard.push(SWAMP);
                             this.endTurn(player)
                         }
                         , () => { this.endTurn(player); }
@@ -213,7 +212,8 @@ class Game {
                     return;
                 }
                 this.askCounter(player, SWAMP, () => {
-                    p.board[type]--;
+                    p.board[SWAMP]--;
+                    p.discard.push(SWAMP);
                     this.endTurn(player)
                 }, () => {
                     this.state = SWAMP_SELECT;
@@ -229,7 +229,8 @@ class Game {
     // TODO: better type checking for all of these
 
     //means player chose to counter
-    //args is of the form [{index: number,visible: boolean },{index: number, visible: boolean}]
+    //args.cards is of the form [{index: number,visible: boolean },{index: number, visible: boolean}]
+    //args.counter is a boolean
     counterSelect(player, args) {
         console.log(args)
         let [p, q] = [this.players[player], this.players[1 - player]];
@@ -291,14 +292,9 @@ class Game {
         }
 
         //remove it from hand
-        let discarded = []
         for (let arg of args.cards) {
             let impPart = (arg.visible) ? p.hand.visible : p.hand.hidden;
-            discarded = discarded.concat(impPart.splice(arg.index, 1));
-        }
-
-        for(let card of discarded){
-            p.discard.push(card);
+            p.discard.push(impPart.splice(arg.index, 1)[0]);
         }
 
         this.askCounter(player, ISLAND, this.onNoCounter, this.onCounter)
@@ -317,9 +313,11 @@ class Game {
         q.discard.push(args.type);
         let saveIdx = q.discard.length - 1;
         this.askCounter(player, MOUNTAIN, () => {
+            p.board[MOUNTAIN]--;
+            p.discard.push(MOUNTAIN);
             //need to do some weird shenanigans to remove the right one, discard could have changed
             let destroyType = q.discard.splice(saveIdx, 1)[0]
-            q.board[destroyType] ++;
+            q.board[destroyType]++;
             this.endTurn(player);
         }, () => {
             this.endTurn(player);
@@ -338,9 +336,11 @@ class Game {
         p.hand.visible.push(p.discard[args.index]);
         p.discard.splice(args.index, 1);
         this.askCounter(player, FOREST, () => {
+            // TODO: Don't let player counter a counter with the island they revived
+            p.board[FOREST]--;
+            p.discard.push(FOREST);
             let revived = p.hand.visible.pop()
             p.discard.splice(args.index, 0, revived)
-            p.board[revived]--;
             this.endTurn(player);
         }, () => {
             this.endTurn(player);
