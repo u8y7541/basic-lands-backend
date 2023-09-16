@@ -20,6 +20,8 @@ export const cardNames = (card) => {
     }
     return "dog";
 }
+
+ 
 /*    PLAINS: "Plains",
     MOUNTAIN: "Mountain",
     FOREST: "Forest",

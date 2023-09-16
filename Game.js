@@ -30,7 +30,7 @@ const MOUNTAIN_SELECT = 1;
 const FOREST_SELECT = 2;
 const ISLAND_SELECT = 3;
 const SWAMP_SELECT = 4;
-const WAIT_FOR_ISLAND_COUNTER = 5;
+const COUNTER_SELECT = 5;
 const GAME_OVER = 6;
 
 class Game {
@@ -54,6 +54,8 @@ class Game {
             sock.on("swamp select", (args) => this.swampSelect(i, args));
             sock.on("end turn", () => this.endTurn(i));
 
+            sock.on("counter select", (args) => this.counterSelect(i, args));
+
             sock.emit("game started", this.gameID);
             sock.emit("board state", this.getBoardState(i));
         });
@@ -62,7 +64,7 @@ class Game {
     sendLogMessage(msg, player) {
         [0, 1].forEach((i) => {
             let sock = this.sockets[i];
-            sock.emit("log", {"message": msg, "talkingAboutYou": (player === i)});
+            sock.emit("log", { "message": msg, "talkingAboutYou": (player === i) });
         });
     }
 
@@ -83,6 +85,13 @@ class Game {
                 mySide["top4"].push(top4[i])
             }
         }
+
+        let counterInfo = {}
+        if (this.state === COUNTER_SELECT) {
+            counterInfo.myCounterTurn = (player === this.counterPlayer)
+            counterInfo.counterCard = this.counterCard
+        }
+
         let otherSide = {
             "deck": otherFullInfo.deck.length,
             "discard": otherFullInfo.discard,
@@ -93,7 +102,7 @@ class Game {
             "board": otherFullInfo.board
         }
 
-        return { "myTurn": player === this.curPlayer, "state": this.state, "cards": [mySide, otherSide] };
+        return { "counterInfo": counterInfo, "myTurn": player === this.curPlayer, "state": this.state, "cards": [mySide, otherSide] };
     }
 
     updatePlayers() {
@@ -138,13 +147,27 @@ class Game {
         switch (type) {
             case PLAINS:
                 this.sendLogMessage(p.name + " played Plains", player);
-                p.hand.hidden.push(this.drawCard(player));
-                this.endTurn(player);
+                this.askCounter(player, PLAINS,
+                    () => {
+                        p.board[type]--;
+                        this.endTurn(player);
+                    },
+                    () => {
+                        p.hand.hidden.push(this.drawCard(player));
+                        this.endTurn(player);
+                    })
                 return;
             case MOUNTAIN:
                 this.sendLogMessage(p.name + " played Mountain", player);
                 if (cardTypes.every((x) => (q.board[x] === 0))) {
-                    this.endTurn(player);
+                    this.askCounter(player, MOUNTAIN,
+                        () => {
+                            p.board[type]--;
+                            this.endTurn(player);
+                        },
+                        () => {
+                            this.endTurn(player);
+                        })
                     return;
                 }
                 this.state = MOUNTAIN_SELECT;
@@ -152,30 +175,136 @@ class Game {
             case FOREST:
                 this.sendLogMessage(p.name + " played Forest", player);
                 if (p.discard.length === 0) {
-                    this.endTurn(player);
+                    this.askCounter(player, FOREST,
+                        () => {
+                            p.board[type]--;
+                            this.endTurn(player)
+                        },
+                        () => {
+                            this.endTurn(player);
+                        })
                     return;
                 }
                 this.state = FOREST_SELECT;
                 break;
             case ISLAND:
                 this.sendLogMessage(p.name + " played Island", player);
-                this.state = ISLAND_SELECT;
+                this.askCounter(player, ISLAND,
+                    () => {
+                        p.board[type]--;
+                        this.endTurn(player)
+                    }
+                    , () => {
+                        this.state = ISLAND_SELECT;
+                        this.updatePlayers();
+                    }
+                )
                 break;
             case SWAMP:
                 this.sendLogMessage(p.name + " played Swamp", player);
                 if ((q.hand.hidden.length + q.hand.visible.length) === 0) {
-                    this.endTurn(player);
+                    this.askCounter(player, SWAMP,
+                        () => {
+                            p.board[type]--;
+                            this.endTurn(player)
+                        }
+                        , () => { this.endTurn(player); }
+                    )
                     return;
                 }
-                this.state = SWAMP_SELECT;
-                q.hand.visible = q.hand.visible.concat(q.hand.hidden);
-                q.hand.hidden = [];
+                this.askCounter(player, SWAMP, () => {
+                    p.board[type]--;
+                    this.endTurn(player)
+                }, () => {
+                    this.state = SWAMP_SELECT;
+                    q.hand.visible = q.hand.visible.concat(q.hand.hidden);
+                    q.hand.hidden = [];
+                    this.updatePlayers();
+                })
                 break;
         }
         this.updatePlayers();
     }
 
     // TODO: better type checking for all of these
+
+    //means player chose to counter
+    //args is of the form [{index: number,visible: boolean },{index: number, visible: boolean}]
+    counterSelect(player, args) {
+        console.log(args)
+        let [p, q] = [this.players[player], this.players[1 - player]];
+
+        if (player !== this.counterPlayer) {
+            console.log("invalid counter");
+            return;
+        }
+        let intendToCounter = args.counter;
+        if (typeof intendToCounter !== "boolean") {
+            console.log("invalid counter");
+            return;
+        }
+        if (!intendToCounter) {
+            this.sendLogMessage(p.name + " chose not to counter.", player);
+            this.onNoCounter();
+            return;
+        }
+
+        //player intends to counter
+        //check that this is a valid counter or ignore it
+        if (args.cards.length !== 2) {
+            console.log("invalid counter")
+            return;
+        }
+
+        let checkValid = (arg) => {
+            let index = arg.index
+            let visible = arg.visible
+            if ((typeof visible) !== "boolean" || (typeof index) !== "number")
+                return null;
+            let impPart = (visible) ? p.hand.visible : p.hand.hidden;
+            if (index >= impPart.length || index < 0) {
+                return null;
+            }
+            return impPart[index];
+        }
+
+        let sCards = [checkValid(args.cards[0]), checkValid(args.cards[1])]
+        if (!sCards[0] || !sCards[1] ||
+            (args.cards[0].visible === args.cards[1].visible &&
+                args.cards[0].index === args.cards[1].index)) {
+            console.log("invalid counter");
+            return;
+        }
+        let target = [ISLAND, this.counterCard]
+
+        target.sort()
+        sCards.sort()
+
+        if (!(target.every((value, index) => value === sCards[index]))) {
+            console.log("invalid counter");
+            return;
+        }
+
+        //swap if less so that the splicing below works
+        if (args.cards[0].index < args.cards[1].index) {
+            [args.cards[0], args.cards[1]] = [args.cards[1], args.cards[0]];
+        }
+
+        //remove it from hand
+        let discarded = []
+        for (let arg of args.cards) {
+            let impPart = (arg.visible) ? p.hand.visible : p.hand.hidden;
+            discarded = discarded.concat(impPart.splice(arg.index, 1));
+        }
+
+        for(let card of discarded){
+            p.discard.push(card);
+        }
+
+        this.askCounter(player, ISLAND, this.onNoCounter, this.onCounter)
+        this.sendLogMessage(p.name + " countered!", player);
+    }
+
     mountainSelect(player, args) {
         let [p, q] = [this.players[player], this.players[1 - player]];
         if (this.curPlayer !== player || this.state != MOUNTAIN_SELECT ||
@@ -186,7 +315,15 @@ class Game {
         this.sendLogMessage(p.name + " destroyed " + q.name + "'s " + cardNames(args.type), player);
         q.board[args.type]--;
         q.discard.push(args.type);
-        this.endTurn(player);
+        let saveIdx = q.discard.length - 1;
+        this.askCounter(player, MOUNTAIN, () => {
+            //need to do some weird shenanigans to remove the right one, discard could have changed
+            let destroyType = q.discard.splice(saveIdx, 1)[0]
+            q.board[destroyType] ++;
+            this.endTurn(player);
+        }, () => {
+            this.endTurn(player);
+        })
     }
 
     forestSelect(player, args) {
@@ -200,7 +337,14 @@ class Game {
         this.sendLogMessage(p.name + " revived " + cardNames(p.discard[args.index]), player);
         p.hand.visible.push(p.discard[args.index]);
         p.discard.splice(args.index, 1);
-        this.endTurn(player);
+        this.askCounter(player, FOREST, () => {
+            let revived = p.hand.visible.pop()
+            p.discard.splice(args.index, 0, revived)
+            p.board[revived]--;
+            this.endTurn(player);
+        }, () => {
+            this.endTurn(player);
+        })
     }
 
     islandSelect(player, args) {
@@ -240,6 +384,21 @@ class Game {
         q.discard.push(q.hand.visible[args.index]);
         q.hand.visible.splice(args.index, 1);
         this.endTurn(player);
+    }
+
+    //ask other person if they want to counter, should require card of type
+    //onCounter, onNoCounter tell the game what to do in both cases
+    askCounter(player, type, onCounter, onNoCounter) {
+        this.state = COUNTER_SELECT
+        this.counterCard = type
+        this.counterPlayer = 1 - player
+        if (onCounter !== null) {
+            this.onCounter = onCounter;
+        }
+        if (onNoCounter !== null) {
+            this.onNoCounter = onNoCounter;
+        }
+        this.updatePlayers()
     }
 
     endTurn(player) {
