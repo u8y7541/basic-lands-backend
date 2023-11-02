@@ -1,5 +1,5 @@
 import express from 'express';
-import http from 'http';
+import https from 'https';
 import { Server as SocketIO } from 'socket.io';
 
 import Game from './Game.js';
@@ -18,7 +18,18 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-const server = http.createServer(app);
+const privateKey = fs.readFileSync('/etc/letsencrypt/live/api.basiclands.xyz/privkey.pem', 'utf8');
+const certificate = fs.readFileSync('/etc/letsencrypt/live/api.basiclands.xyz/cert.pem', 'utf8');
+const ca = fs.readFileSync('/etc/letsencrypt/live/api.basiclands.xyz/chain.pem', 'utf8'); // Optional CA bundle
+
+const credentials = {
+  key: privateKey,
+  cert: certificate,
+  ca: ca, // Include if you have a CA bundle
+};
+
+const server = https.createServer(credentials, app);
+
 const io = new SocketIO(server,{
   cors:{
     origin: "*",
